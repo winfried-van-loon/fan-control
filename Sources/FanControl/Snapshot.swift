@@ -9,6 +9,13 @@ enum Snapshot {
         DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
             render(PopoverView(openWindow: {}, quit: {}).environment(store), size: nil, to: "\(dir)/popover.png")
             render(DashboardView().environment(store), size: NSSize(width: 980, height: 760), to: "\(dir)/dashboard.png")
+            render(SettingsView().environment(store), size: nil, to: "\(dir)/settings.png")
+            let original = store.menuBarFanDisplay // the setting persists, so put it back afterwards
+            for option in MenuBarFanDisplay.allCases {
+                store.menuBarFanDisplay = option
+                print("menu bar [\(option.label)]: \(store.menuBarSymbol) \(store.menuBarText)")
+            }
+            store.menuBarFanDisplay = original
             exit(0)
         }
     }

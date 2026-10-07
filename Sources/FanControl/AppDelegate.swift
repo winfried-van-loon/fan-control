@@ -74,23 +74,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func updateStatusItem() {
         guard let button = statusItem?.button else { return }
-        var text = store.menuBarTemperature.map { " " + store.formatTemperature($0, unit: false) } ?? " —"
-        if store.menuBarShowsRPM, !store.fans.isEmpty {
-            let avg = store.fans.map(\.actual).reduce(0, +) / Double(store.fans.count)
-            text += String(format: " %.1fk", avg / 1000)
-        }
-        button.attributedTitle = NSAttributedString(string: text, attributes: [
+        button.attributedTitle = NSAttributedString(string: " " + store.menuBarText, attributes: [
             .font: NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular),
             .baselineOffset: 0.5,
         ])
-        let manual = !store.isAllAuto
-        let symbol = manual ? "fan.fill" : "fan"
+        let symbol = store.menuBarSymbol
         if button.image?.accessibilityDescription != symbol {
             button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: symbol)
             button.image?.isTemplate = true
         }
-        let mode = store.targetModeEnabled ? " · holding \(store.formatTemperature(store.targetTemperature))" : (manual ? " · fans in manual mode" : "")
-        button.toolTip = "\(store.menuBarSensorLabel)\(mode)"
+        let temp = store.menuBarTemperature.map { store.formatTemperature($0) } ?? "—"
+        button.toolTip = "\(store.menuBarSensorLabel) \(temp)\n\(store.fanStatusDescription)"
     }
 
     @objc private func statusItemClicked(_ sender: NSStatusBarButton) {
@@ -131,6 +125,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         menu.addItem(.separator())
         menu.addItem(target)
         menu.addItem(.separator())
+        let display = NSMenuItem(title: "Fan Speed in Menu Bar", action: nil, keyEquivalent: "")
+        let displayMenu = NSMenu()
+        for option in MenuBarFanDisplay.allCases {
+            let item = NSMenuItem(title: option.label, action: #selector(setFanDisplayFromMenu(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = option.rawValue
+            item.state = store.menuBarFanDisplay == option ? .on : .off
+            displayMenu.addItem(item)
+        }
+        displayMenu.addItem(.separator())
+        let showMode = NSMenuItem(title: "Show Fan Mode", action: #selector(toggleShowModeFromMenu), keyEquivalent: "")
+        showMode.target = self
+        showMode.state = store.menuBarShowsMode ? .on : .off
+        displayMenu.addItem(showMode)
+        display.submenu = displayMenu
+        menu.addItem(display)
+
         let login = NSMenuItem(title: "Start at Login", action: #selector(toggleLoginItem), keyEquivalent: "")
         login.target = self
         login.state = LoginItem.isEnabled ? .on : .off
@@ -148,6 +159,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc private func toggleTargetFromMenu() { store.setTargetMode(!store.targetModeEnabled) }
+
+    @objc private func setFanDisplayFromMenu(_ item: NSMenuItem) {
+        if let raw = item.representedObject as? String, let option = MenuBarFanDisplay(rawValue: raw) {
+            store.menuBarFanDisplay = option
+        }
+    }
+
+    @objc private func toggleShowModeFromMenu() { store.menuBarShowsMode.toggle() }
 
     @objc private func toggleLoginItem() {
         do {

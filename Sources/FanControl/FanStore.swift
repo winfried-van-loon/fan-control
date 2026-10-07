@@ -9,6 +9,26 @@ enum FanMode: Codable, Equatable {
     var isManual: Bool { if case .manual = self { return true } else { return false } }
 }
 
+/// How fan speed is shown next to the temperature in the menu bar.
+enum MenuBarFanDisplay: String, CaseIterable, Identifiable {
+    case off, average, each, percent
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .off: return "Off"
+        case .average: return "Average RPM"
+        case .each: return "RPM per fan"
+        case .percent: return "Percent of max"
+        }
+    }
+}
+
+/// Overall fan state, summarised for compact displays.
+enum FanModeSummary {
+    case auto, manual, full, target
+}
+
 struct HistorySample: Identifiable {
     let id = UUID()
     let date: Date
@@ -41,7 +61,8 @@ final class FanStore {
     // Settings
     var menuBarSensorKey: String { didSet { defaults.set(menuBarSensorKey, forKey: "menuBarSensorKey"); onChange?() } }
     var useFahrenheit: Bool { didSet { defaults.set(useFahrenheit, forKey: "useFahrenheit"); onChange?() } }
-    var menuBarShowsRPM: Bool { didSet { defaults.set(menuBarShowsRPM, forKey: "menuBarShowsRPM"); onChange?() } }
+    var menuBarFanDisplay: MenuBarFanDisplay { didSet { defaults.set(menuBarFanDisplay.rawValue, forKey: "menuBarFanDisplay"); onChange?() } }
+    var menuBarShowsMode: Bool { didSet { defaults.set(menuBarShowsMode, forKey: "menuBarShowsMode"); onChange?() } }
     var refreshInterval: Double { didSet { defaults.set(refreshInterval, forKey: "refreshInterval"); startTimer() } }
     var restoreAutoOnQuit: Bool { didSet { defaults.set(restoreAutoOnQuit, forKey: "restoreAutoOnQuit") } }
     var reapplyOnLaunch: Bool { didSet { defaults.set(reapplyOnLaunch, forKey: "reapplyOnLaunch") } }
@@ -78,10 +99,14 @@ final class FanStore {
             "thermalSafetyLimit": 95.0,
             "targetTemperature": 60.0,
             "targetSensorKey": "TCXC",
+            "menuBarShowsMode": true,
         ])
         menuBarSensorKey = defaults.string(forKey: "menuBarSensorKey") ?? "TCXC"
         useFahrenheit = defaults.bool(forKey: "useFahrenheit")
-        menuBarShowsRPM = defaults.bool(forKey: "menuBarShowsRPM")
+        // Older versions stored a plain on/off "menuBarShowsRPM".
+        menuBarFanDisplay = MenuBarFanDisplay(rawValue: defaults.string(forKey: "menuBarFanDisplay") ?? "")
+            ?? (defaults.object(forKey: "menuBarShowsRPM") as? Bool == false ? .off : .average)
+        menuBarShowsMode = defaults.bool(forKey: "menuBarShowsMode")
         refreshInterval = defaults.double(forKey: "refreshInterval")
         restoreAutoOnQuit = defaults.bool(forKey: "restoreAutoOnQuit")
         reapplyOnLaunch = defaults.bool(forKey: "reapplyOnLaunch")
@@ -302,6 +327,62 @@ final class FanStore {
     func displayRPM(for fan: FanInfo) -> Double {
         if case .manual(let rpm) = mode(for: fan.index) { return rpm }
         return fan.actual
+    }
+
+    var modeSummary: FanModeSummary {
+        if targetModeEnabled { return .target }
+        if isAllAuto { return .auto }
+        let allFull = fans.allSatisfy { fan in
+            if case .manual(let rpm) = mode(for: fan.index) { return rpm >= fan.maximum - 1 }
+            return false
+        }
+        return allFull ? .full : .manual
+    }
+
+    /// Text shown next to the menu bar icon, e.g. "56° 1.8k" or "64° 3.4k →60°".
+    var menuBarText: String {
+        var parts = [menuBarTemperature.map { formatTemperature($0, unit: false) } ?? "—"]
+        if !fans.isEmpty {
+            func k(_ rpm: Double) -> String { String(format: "%.1fk", rpm / 1000) }
+            switch menuBarFanDisplay {
+            case .off: break
+            case .average: parts.append(k(fans.map(\.actual).reduce(0, +) / Double(fans.count)))
+            case .each: parts.append(fans.map { k($0.actual) }.joined(separator: "·"))
+            case .percent:
+                // Share of maximum speed (not of the min…max range), so a spinning fan never reads 0%.
+                let pct = fans.map { $0.maximum > 0 ? $0.actual / $0.maximum : 0 }.reduce(0, +) / Double(fans.count) * 100
+                parts.append("\(Int(pct.rounded()))%")
+            }
+        }
+        if menuBarShowsMode {
+            switch modeSummary {
+            case .auto: break
+            case .manual: parts.append("Manual")
+            case .full: parts.append("Max")
+            case .target: parts.append("→" + formatTemperature(targetTemperature, unit: false))
+            }
+        }
+        return parts.joined(separator: " ")
+    }
+
+    var menuBarSymbol: String {
+        switch modeSummary {
+        case .auto: return "fan"
+        case .manual, .full, .target: return "fan.fill"
+        }
+    }
+
+    /// Longer description for the status item tooltip.
+    var fanStatusDescription: String {
+        let speeds = fans.map { "\($0.name) \(Int($0.actual)) rpm" }.joined(separator: ", ")
+        let mode: String
+        switch modeSummary {
+        case .auto: mode = "Automatic"
+        case .manual: mode = "Manual"
+        case .full: mode = "Full speed"
+        case .target: mode = "Holding \(formatTemperature(targetTemperature))"
+        }
+        return "\(mode) — \(speeds)"
     }
 
     func formatTemperature(_ celsius: Double, unit: Bool = true) -> String {

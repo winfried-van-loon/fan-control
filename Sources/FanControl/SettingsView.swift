@@ -15,7 +15,19 @@ struct SettingsView: View {
                         Text(sensor.name).tag(sensor.key)
                     }
                 }
-                Toggle("Also show fan speed", isOn: $store.menuBarShowsRPM)
+                Picker("Fan speed", selection: $store.menuBarFanDisplay) {
+                    ForEach(MenuBarFanDisplay.allCases) { Text($0.label).tag($0) }
+                }
+                Toggle("Show fan mode (Manual, Max, →target)", isOn: $store.menuBarShowsMode)
+                LabeledContent("Preview") {
+                    HStack(spacing: 4) {
+                        Image(systemName: store.menuBarSymbol)
+                        Text(store.menuBarText).monospacedDigit()
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(RoundedRectangle(cornerRadius: 5).fill(Color.primary.opacity(0.08)))
+                }
                 Picker("Units", selection: $store.useFahrenheit) {
                     Text("Celsius").tag(false)
                     Text("Fahrenheit").tag(true)

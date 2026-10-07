@@ -2,7 +2,10 @@
 
 A macOS menu bar app that shows your MacBook's live temperature and lets you control the fans.
 
-- **Menu bar:** a fan icon plus the live temperature. The icon fills in when the fans are under manual control.
+- **Menu bar:** a fan icon plus the live temperature and fan status, e.g. `56° 1.8k` or `64° 3.4k →60°`.
+  - Fan speed can be shown as average RPM, RPM per fan, or percent of max, or hidden.
+  - The icon fills in, and a label (`Manual`, `Max`, `→60°`) appears, whenever macOS isn't controlling the fans.
+  - Set this in Settings, which has a live preview, or in the right-click menu under *Fan Speed in Menu Bar*.
   - **Left-click** opens a popover with presets, an all-fans slider, per-fan sliders, and Auto/Max buttons. It also has *Open Fan Control* and *Quit*.
   - **Right-click** opens a quick menu with the presets, Open and Quit.
 - **Window:** shows every fan with a live gauge, Auto/Manual switch, slider and Min/50%/Max buttons.
