@@ -46,9 +46,21 @@ codesign --force --sign - "$APP/Contents/MacOS/fanhelper"
 codesign --force --sign - "$APP"
 echo "Built $APP"
 
+# Keep macOS from treating the build copy as "the" app (it would become the login item target).
+LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+"$LSREGISTER" -u "$PWD/$APP" 2>/dev/null || true
+
 if [ "${1:-}" = "--install" ]; then
-  pkill -x FanControl 2>/dev/null || true
+  # Quit gracefully so the app hands the fans back to Auto, then wait for it to exit.
+  if pgrep -x FanControl >/dev/null; then
+    osascript -e 'tell application id "com.fancontrol.app" to quit' 2>/dev/null || true
+    for _ in {1..20}; do pgrep -x FanControl >/dev/null || break; sleep 0.25; done
+    pkill -x FanControl 2>/dev/null || true
+    REOPEN=1
+  fi
   rm -rf "/Applications/Fan Control.app"
   cp -R "$APP" /Applications/
+  "$LSREGISTER" -f "/Applications/Fan Control.app"
   echo "Installed to /Applications/Fan Control.app"
+  [ "${REOPEN:-0}" = 1 ] && open "/Applications/Fan Control.app"
 fi

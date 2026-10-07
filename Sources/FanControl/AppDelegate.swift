@@ -11,11 +11,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let args = CommandLine.arguments
+        if let i = args.firstIndex(of: "--login-item") {
+            LoginItem.runCommand(i + 1 < args.count ? args[i + 1] : "status")
+        }
         if let i = args.firstIndex(of: "--snapshot"), i + 1 < args.count {
             Snapshot.run(store: store, to: args[i + 1])
             return
         }
         buildMainMenu()
+        handleTerminationSignals()
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
@@ -42,6 +46,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         store.onChange = { [weak self] in self?.updateStatusItem() }
         store.start()
         updateStatusItem()
+    }
+
+    private var signalSources: [DispatchSourceSignal] = []
+
+    /// Treat `kill`/`pkill` (SIGTERM) and Ctrl-C like a normal quit, so the fans are handed back to Auto.
+    private func handleTerminationSignals() {
+        for sig in [SIGTERM, SIGINT, SIGHUP] {
+            signal(sig, SIG_IGN)
+            let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
+            source.setEventHandler { NSApp.terminate(nil) }
+            source.resume()
+            signalSources.append(source)
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -72,7 +89,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: symbol)
             button.image?.isTemplate = true
         }
-        button.toolTip = "\(store.menuBarSensorLabel)\(manual ? " · fans in manual mode" : "")"
+        let mode = store.targetModeEnabled ? " · holding \(store.formatTemperature(store.targetTemperature))" : (manual ? " · fans in manual mode" : "")
+        button.toolTip = "\(store.menuBarSensorLabel)\(mode)"
     }
 
     @objc private func statusItemClicked(_ sender: NSStatusBarButton) {
@@ -105,7 +123,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             item.isEnabled = store.canControl
             menu.addItem(item)
         }
+        let target = NSMenuItem(title: "Hold \(store.formatTemperature(store.targetTemperature))", action: #selector(toggleTargetFromMenu), keyEquivalent: "")
+        target.target = self
+        target.state = store.targetModeEnabled ? .on : .off
+        target.image = NSImage(systemSymbolName: "scope", accessibilityDescription: nil)
+        target.isEnabled = store.canControl
         menu.addItem(.separator())
+        menu.addItem(target)
+        menu.addItem(.separator())
+        let login = NSMenuItem(title: "Start at Login", action: #selector(toggleLoginItem), keyEquivalent: "")
+        login.target = self
+        login.state = LoginItem.isEnabled ? .on : .off
+        menu.addItem(login)
         menu.addItem(withTitle: "Open Fan Control…", action: #selector(openWindowFromMenu), keyEquivalent: "o").target = self
         menu.addItem(withTitle: "Quit Fan Control", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         statusItem.menu = menu
@@ -116,6 +145,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc private func applyPresetFromMenu(_ item: NSMenuItem) {
         guard let id = item.representedObject as? String, let preset = store.allPresets.first(where: { $0.id == id }) else { return }
         store.applyPreset(preset)
+    }
+
+    @objc private func toggleTargetFromMenu() { store.setTargetMode(!store.targetModeEnabled) }
+
+    @objc private func toggleLoginItem() {
+        do {
+            try LoginItem.setEnabled(!LoginItem.isEnabled)
+        } catch {
+            store.notice = "Couldn't change Start at Login: \(error.localizedDescription)"
+        }
     }
 
     @objc private func openWindowFromMenu() { showWindow() }

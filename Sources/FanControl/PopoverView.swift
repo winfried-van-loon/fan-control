@@ -12,9 +12,11 @@ struct PopoverView: View {
             HelperBanner()
             NoticeBar()
             presets
+            TargetControl(compact: true)
             Divider()
             fans
             Divider()
+            LaunchAtLoginToggle(compact: true)
             footer
         }
         .padding(16)
@@ -64,7 +66,7 @@ struct PopoverView: View {
             HStack {
                 Text("ALL FANS").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
                 Spacer()
-                Text(store.isAllAuto ? "Auto" : "\(Int((store.overallFraction * 100).rounded()))%")
+                Text(store.targetModeEnabled ? "Target" : (store.isAllAuto ? "Auto" : "\(Int((store.overallFraction * 100).rounded()))%"))
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
@@ -101,9 +103,9 @@ private struct PopoverFanRow: View {
         let manual = store.mode(for: fan.index).isManual
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
-                SpinningFan(rpm: fan.actual, size: 14, tint: manual ? .orange : .accentColor)
+                SpinningFan(rpm: fan.actual, size: 14, tint: store.targetModeEnabled ? .purple : (manual ? .orange : .accentColor))
                 Text(fan.name).font(.callout.weight(.medium))
-                ModeBadge(manual: manual)
+                ModeBadge(manual: manual, target: store.targetModeEnabled)
                 Spacer()
                 Text("\(Int(fan.actual)) rpm")
                     .font(.callout.monospacedDigit())

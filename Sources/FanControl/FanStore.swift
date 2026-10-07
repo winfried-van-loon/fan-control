@@ -30,6 +30,11 @@ final class FanStore {
     private(set) var modes: [Int: FanMode] = [:]
     private(set) var activePresetID: String? = Preset.auto.id
 
+    /// When on, a PI controller drives all fans to hold `targetTemperature` on `targetSensorKey`.
+    private(set) var targetModeEnabled = false
+    /// Last controller output, as a fraction of each fan's min…max range.
+    private(set) var targetOutput: Double = 0
+
     private(set) var helperStatus: HelperStatus = .notInstalled
     var notice: String?
 
@@ -42,6 +47,8 @@ final class FanStore {
     var reapplyOnLaunch: Bool { didSet { defaults.set(reapplyOnLaunch, forKey: "reapplyOnLaunch") } }
     var thermalSafety: Bool { didSet { defaults.set(thermalSafety, forKey: "thermalSafety") } }
     var thermalSafetyLimit: Double { didSet { defaults.set(thermalSafetyLimit, forKey: "thermalSafetyLimit") } }
+    var targetTemperature: Double { didSet { defaults.set(targetTemperature, forKey: "targetTemperature") } }
+    var targetSensorKey: String { didSet { defaults.set(targetSensorKey, forKey: "targetSensorKey"); resetController() } }
     private(set) var customPresets: [Preset] { didSet { savePresets() } }
 
     /// Called after each refresh and on display-relevant setting changes (used to update the status item).
@@ -56,6 +63,11 @@ final class FanStore {
     private var applying = false
     private var didInitialSync = false
 
+    // Target-temperature controller state
+    private var controllerIntegral = 0.0
+    private var smoothedTemperature: Double?
+    private var lastControllerTick: Date?
+
     init() {
         defaults.register(defaults: [
             "menuBarSensorKey": "TCXC",
@@ -64,6 +76,8 @@ final class FanStore {
             "reapplyOnLaunch": false,
             "thermalSafety": true,
             "thermalSafetyLimit": 95.0,
+            "targetTemperature": 60.0,
+            "targetSensorKey": "TCXC",
         ])
         menuBarSensorKey = defaults.string(forKey: "menuBarSensorKey") ?? "TCXC"
         useFahrenheit = defaults.bool(forKey: "useFahrenheit")
@@ -73,6 +87,8 @@ final class FanStore {
         reapplyOnLaunch = defaults.bool(forKey: "reapplyOnLaunch")
         thermalSafety = defaults.bool(forKey: "thermalSafety")
         thermalSafetyLimit = defaults.double(forKey: "thermalSafetyLimit")
+        targetTemperature = defaults.double(forKey: "targetTemperature")
+        targetSensorKey = defaults.string(forKey: "targetSensorKey") ?? "TCXC"
         if let data = defaults.data(forKey: "customPresets"), let presets = try? JSONDecoder().decode([Preset].self, from: data) {
             customPresets = presets
         } else {
@@ -122,6 +138,7 @@ final class FanStore {
                 modes = saved
                 activePresetID = defaults.string(forKey: "lastPresetID")
                 scheduleApply(delay: 0)
+                if defaults.bool(forKey: "lastTargetModeEnabled") { setTargetMode(true) }
             }
         }
 
@@ -131,6 +148,7 @@ final class FanStore {
             if let first = history.firstIndex(where: { $0.date >= cutoff }), first > 0 { history.removeFirst(first) }
         }
 
+        runTargetController()
         enforceThermalSafety()
         correctDrift()
         onChange?()
@@ -167,6 +185,70 @@ final class FanStore {
         guard !allAtMax else { return }
         notice = "Thermal safety: \(formatTemperature(critical)) reached — switched back to automatic."
         applyPreset(.auto)
+    }
+
+    // MARK: Target temperature
+
+    var targetSensor: Sensor? {
+        sensors.first { $0.key == targetSensorKey } ?? menuBarSensor
+    }
+
+    func setTargetMode(_ enabled: Bool) {
+        guard enabled != targetModeEnabled else { return }
+        resetController()
+        targetModeEnabled = enabled
+        defaults.set(enabled, forKey: "lastTargetModeEnabled")
+        if enabled {
+            activePresetID = nil
+            runTargetController()
+        } else if !modes.values.contains(where: \.isManual) {
+            activePresetID = Preset.auto.id
+        }
+    }
+
+    private func resetController() {
+        controllerIntegral = 0
+        smoothedTemperature = nil
+        lastControllerTick = nil
+    }
+
+    /// PI controller: fans speed up while the sensor is above target and settle back down below it.
+    /// Ramps up quickly, ramps down slowly so the fans don't pulse on short temperature spikes.
+    private func runTargetController() {
+        guard targetModeEnabled, canControl, !fans.isEmpty, let temp = targetSensor?.value else { return }
+
+        let now = Date()
+        let dt = min(10, max(0.5, lastControllerTick.map { now.timeIntervalSince($0) } ?? refreshInterval))
+        lastControllerTick = now
+
+        let smoothed = smoothedTemperature.map { $0 + 0.4 * (temp - $0) } ?? temp
+        smoothedTemperature = smoothed
+        let error = smoothed - targetTemperature // > 0: too hot
+
+        let kp = 0.07   // 0.07 of the fan range per °C above target
+        let ki = 0.004  // integral gain per °C·s
+        var output = kp * error + controllerIntegral
+        // Anti-windup: only integrate while the output isn't saturated in the direction of the error.
+        if !(output >= 1 && error > 0) && !(output <= 0 && error < 0) {
+            controllerIntegral = max(0, min(1, controllerIntegral + ki * error * dt))
+            output = kp * error + controllerIntegral
+        }
+        output = max(0, min(1, output))
+        if output < targetOutput {
+            output = max(output, targetOutput - 0.025 * dt) // gentle ramp-down
+        }
+        targetOutput = output
+
+        var changed = false
+        for fan in fans {
+            let rpm = fan.rpm(forFraction: output)
+            let current: Double? = { if case .manual(let r) = mode(for: fan.index) { return r } else { return nil } }()
+            if current == nil || abs(current! - rpm) >= 60 {
+                modes[fan.index] = .manual(rpm: rpm)
+                changed = true
+            }
+        }
+        if changed, !applying { scheduleApply(delay: 0) }
     }
 
     // MARK: Derived values
@@ -230,6 +312,7 @@ final class FanStore {
     // MARK: Control
 
     func applyPreset(_ preset: Preset) {
+        setTargetMode(false)
         for fan in fans {
             if let level = preset.level(forFan: fan.index) {
                 modes[fan.index] = .manual(rpm: fan.rpm(forFraction: level))
@@ -243,6 +326,7 @@ final class FanStore {
 
     func setRPM(_ rpm: Double, forFan index: Int) {
         guard let fan = fans.first(where: { $0.index == index }) else { return }
+        setTargetMode(false)
         modes[index] = .manual(rpm: max(fan.minimum, min(fan.maximum, rpm.rounded())))
         activePresetID = nil
         scheduleApply()
@@ -254,12 +338,14 @@ final class FanStore {
     }
 
     func setAllFraction(_ fraction: Double) {
+        setTargetMode(false)
         for fan in fans { modes[fan.index] = .manual(rpm: fan.rpm(forFraction: fraction)) }
         activePresetID = nil
         scheduleApply()
     }
 
     func setAuto(forFan index: Int) {
+        setTargetMode(false)
         modes[index] = .auto
         activePresetID = isAllAuto ? Preset.auto.id : nil
         scheduleApply(delay: 0)

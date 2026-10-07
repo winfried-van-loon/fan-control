@@ -1,11 +1,8 @@
-import ServiceManagement
 import SwiftUI
 import FanKit
 
 struct SettingsView: View {
     @Environment(FanStore.self) private var store
-    @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
-    @State private var loginError: String?
 
     var body: some View {
         @Bindable var store = store
@@ -41,21 +38,7 @@ struct SettingsView: View {
                         Text("Switch to Auto at \(store.formatTemperature(store.thermalSafetyLimit))")
                     }
                 }
-                Toggle("Launch at login", isOn: Binding(
-                    get: { launchAtLogin },
-                    set: { enable in
-                        do {
-                            if enable { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
-                            loginError = nil
-                        } catch {
-                            loginError = error.localizedDescription
-                        }
-                        launchAtLogin = SMAppService.mainApp.status == .enabled
-                    }
-                ))
-                if let loginError {
-                    Text(loginError).font(.caption).foregroundStyle(.red)
-                }
+                LaunchAtLoginToggle(label: "Start at login")
             }
 
             Section("Helper") {

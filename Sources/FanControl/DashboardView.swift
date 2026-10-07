@@ -13,6 +13,7 @@ struct DashboardView: View {
                     HelperBanner()
                     NoticeBar()
                     FansSection()
+                    TargetSection()
                     PresetsSection()
                     HistorySection()
                 }
@@ -77,7 +78,7 @@ private struct FansSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SectionHeader(title: "Fans", symbol: "fan", trailing: store.isAllAuto ? "System controlled" : "Manual control")
+            SectionHeader(title: "Fans", symbol: "fan", trailing: store.targetModeEnabled ? "Holding \(store.formatTemperature(store.targetTemperature))" : (store.isAllAuto ? "System controlled" : "Manual control"))
             HStack(spacing: 12) {
                 ForEach(store.fans) { fan in
                     FanCard(fan: fan)
@@ -113,13 +114,13 @@ private struct FanCard: View {
 
     var body: some View {
         let mode = store.mode(for: fan.index)
-        let tint: Color = mode.isManual ? .orange : .accentColor
+        let tint: Color = store.targetModeEnabled ? .purple : (mode.isManual ? .orange : .accentColor)
         Card {
             VStack(spacing: 10) {
                 HStack {
                     Text(fan.name).font(.subheadline.weight(.semibold))
                     Spacer()
-                    ModeBadge(manual: mode.isManual)
+                    ModeBadge(manual: mode.isManual, target: store.targetModeEnabled)
                 }
                 RingGauge(fraction: fan.fraction, tint: tint) {
                     VStack(spacing: 0) {
@@ -169,6 +170,15 @@ private struct FanCard: View {
                 .controlSize(.small)
                 .disabled(!store.canControl)
             }
+        }
+    }
+}
+
+private struct TargetSection: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionHeader(title: "Target Temperature", symbol: "scope")
+            Card { TargetControl() }
         }
     }
 }

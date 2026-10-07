@@ -7,10 +7,12 @@ A macOS menu bar app that shows your MacBook's live temperature and lets you con
   - **Right-click** opens a quick menu with the presets, Open and Quit.
 - **Window:** shows every fan with a live gauge, Auto/Manual switch, slider and Min/50%/Max buttons.
   - An all-fans slider with **Auto** and **Full Speed** buttons.
+  - **Target temperature**: pick a temperature (40–90 °C, default 60 °C) and a sensor (default CPU Package). The app then adjusts all fans continuously to hold it. It ramps up quickly when the sensor goes over the target and slows down gently below it. Touching any preset or slider turns it off.
   - Presets: *Auto, Silent, Balanced, Boost, Full*, plus your own. Use *Save Current Setting as Preset…* to add one, and right-click a custom preset to delete it.
   - Every temperature sensor, grouped (CPU, GPU, memory, storage, battery, mainboard, airflow, enclosure). Hover a sensor and click the pin to show it in the menu bar.
   - A 10-minute history of temperature and fan speed.
-  - Settings (gear icon): menu bar sensor, °C/°F, refresh rate, return to Auto on quit, reapply at launch, thermal safety, launch at login, and helper install/uninstall.
+  - Settings (gear icon): menu bar sensor, °C/°F, refresh rate, return to Auto on quit, reapply at launch, thermal safety, start at login, and helper install/uninstall.
+- **Start at login:** a checkbox in the popover, an item in the right-click menu, and a toggle in Settings. It registers the app under System Settings → General → Login Items. Run the app from `/Applications` (`./build.sh --install`) so the login item points there. Combine it with *Reapply last fan setting at launch* to restore your fan mode (including target temperature) after a restart.
 
 ## Build & run
 
@@ -43,6 +45,7 @@ Because it's setuid, any local user account on this Mac can run it, but only to 
 - Speeds are always clamped to the fan's own SMC minimum/maximum.
 - **Return fans to Auto when quitting** is on by default.
 - **Thermal safety** is on by default: if any CPU/GPU sensor reaches 95 °C while fans are manually set below maximum, the app returns them to Auto.
+- Target mode can only raise fans to their maximum. If the load is too high to reach the target, the fans stay at 100%, and thermal safety still applies.
 - If macOS takes a fan back (e.g. after sleep), the app reapplies your manual setting.
 
 ## Layout

@@ -112,15 +112,89 @@ struct PresetButton: View {
 
 struct ModeBadge: View {
     var manual: Bool
+    var target: Bool = false
+
+    private var color: Color { target ? .purple : (manual ? .orange : .green) }
 
     var body: some View {
-        Text(manual ? "MANUAL" : "AUTO")
+        Text(target ? "TARGET" : (manual ? "MANUAL" : "AUTO"))
             .font(.system(size: 9, weight: .bold, design: .rounded))
             .tracking(0.5)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
-            .background(Capsule().fill(manual ? Color.orange.opacity(0.2) : Color.green.opacity(0.18)))
-            .foregroundStyle(manual ? Color.orange : Color.green)
+            .background(Capsule().fill(color.opacity(0.2)))
+            .foregroundStyle(color)
+    }
+}
+
+/// Toggle + setpoint for "hold a target temperature" mode.
+struct TargetControl: View {
+    @Environment(FanStore.self) private var store
+    var compact: Bool = false
+
+    var body: some View {
+        @Bindable var store = store
+        let enabled = store.targetModeEnabled
+        VStack(alignment: .leading, spacing: compact ? 6 : 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "scope")
+                    .foregroundStyle(enabled ? Color.purple : .secondary)
+                Toggle(isOn: Binding(get: { enabled }, set: { store.setTargetMode($0) })) {
+                    Text(compact ? "Hold temperature" : "Hold a target temperature")
+                        .font(compact ? .callout.weight(.medium) : .subheadline.weight(.medium))
+                }
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                Spacer()
+                if compact {
+                    Stepper(value: $store.targetTemperature, in: 40...90, step: 1) {
+                        Text(store.formatTemperature(store.targetTemperature))
+                            .font(.callout.monospacedDigit().weight(.semibold))
+                            .foregroundStyle(enabled ? Color.purple : .primary)
+                    }
+                    .controlSize(.small)
+                }
+            }
+            .disabled(!store.canControl)
+
+            if !compact {
+                HStack(spacing: 10) {
+                    Text(store.formatTemperature(40)).font(.caption2).foregroundStyle(.secondary)
+                    Slider(value: Binding(get: { store.targetTemperature }, set: { store.targetTemperature = $0.rounded() }), in: 40...90)
+                        .controlSize(.small)
+                    Text(store.formatTemperature(90)).font(.caption2).foregroundStyle(.secondary)
+                    Text(store.formatTemperature(store.targetTemperature))
+                        .font(.title3.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(enabled ? Color.purple : .primary)
+                        .frame(width: 58, alignment: .trailing)
+                }
+                Picker("Sensor", selection: $store.targetSensorKey) {
+                    ForEach(store.sensors.sorted { $0.name < $1.name }) { sensor in
+                        Text(sensor.name).tag(sensor.key)
+                    }
+                }
+                .controlSize(.small)
+            }
+
+            if enabled, let sensor = store.targetSensor {
+                let diff = sensor.value - store.targetTemperature
+                HStack(spacing: 4) {
+                    Text("\(sensor.name) \(store.formatTemperature(sensor.value))")
+                    Image(systemName: diff > 1 ? "arrow.down.right" : (diff < -1 ? "checkmark" : "equal"))
+                    Text(diff > 1 ? "cooling" : (diff < -1 ? "below target" : "on target"))
+                    Spacer()
+                    Text("fans \(Int((store.targetOutput * 100).rounded()))%")
+                        .monospacedDigit()
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            } else if !compact {
+                Text("Fans speed up when the sensor rises above the target and slow back down below it. Thermal safety stays active.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 }
 
@@ -231,5 +305,49 @@ struct PresetGrid: View {
                 }
             }
         }
+    }
+}
+
+/// "Start at login" switch. Re-reads the real state on appear, since it can also be changed in System Settings.
+struct LaunchAtLoginToggle: View {
+    var label: String = "Start Fan Control at login"
+    var compact: Bool = false
+    @State private var enabled = LoginItem.isEnabled
+    @State private var needsApproval = LoginItem.needsApproval
+    @State private var error: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            // Matches the surrounding toggles: a checkbox in the popover, the default style in Settings.
+            Toggle(label, isOn: Binding(get: { enabled }, set: { set($0) }))
+                .font(compact ? .callout : .body)
+            if needsApproval {
+                HStack(spacing: 4) {
+                    Text("Blocked in System Settings.").foregroundStyle(.orange)
+                    Button("Open Login Items…") { LoginItem.openSystemSettings() }
+                        .buttonStyle(.link)
+                }
+                .font(.caption)
+            }
+            if let error {
+                Text(error).font(.caption).foregroundStyle(.red)
+            }
+        }
+        .onAppear(perform: reload)
+    }
+
+    private func set(_ on: Bool) {
+        do {
+            try LoginItem.setEnabled(on)
+            error = nil
+        } catch {
+            self.error = error.localizedDescription
+        }
+        reload()
+    }
+
+    private func reload() {
+        enabled = LoginItem.isEnabled
+        needsApproval = LoginItem.needsApproval
     }
 }
