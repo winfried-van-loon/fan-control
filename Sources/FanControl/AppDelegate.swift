@@ -3,7 +3,7 @@ import SwiftUI
 import FanKit
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverDelegate {
     private let store = FanStore()
     private var statusItem: NSStatusItem!
     private let popover = NSPopover()
@@ -45,6 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         hosting.sizingOptions = .preferredContentSize
         popover.contentViewController = hosting
         popover.behavior = .transient
+        popover.delegate = self
         popover.animates = true
 
         store.onChange = { [weak self] in self?.updateStatusItem() }
@@ -77,7 +78,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     // MARK: Status item
 
     private func updateStatusItem() {
-        guard let button = statusItem?.button else { return }
+        // Changing the item's width while the popover is open shifts the popover with it,
+        // so hold the title still until it closes (the popover shows live values anyway).
+        guard let button = statusItem?.button, !popover.isShown else { return }
         button.attributedTitle = NSAttributedString(string: " " + store.menuBarText, attributes: [
             .font: NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular),
             .baselineOffset: 0.5,
@@ -162,7 +165,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         store.applyPreset(preset)
     }
 
-    @objc private func toggleTargetFromMenu() { store.setTargetMode(!store.targetModeEnabled) }
+    @objc private func toggleTargetFromMenu() { store.setHoldTemperature(!store.targetModeEnabled) }
+
+    func popoverDidClose(_ notification: Notification) {
+        updateStatusItem()
+    }
 
     @objc private func setFanDisplayFromMenu(_ item: NSMenuItem) {
         if let raw = item.representedObject as? String, let option = MenuBarFanDisplay(rawValue: raw) {

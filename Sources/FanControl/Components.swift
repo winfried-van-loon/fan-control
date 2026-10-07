@@ -139,7 +139,7 @@ struct TargetControl: View {
             HStack(spacing: 8) {
                 Image(systemName: "scope")
                     .foregroundStyle(enabled ? Color.purple : .secondary)
-                Toggle(isOn: Binding(get: { enabled }, set: { store.setTargetMode($0) })) {
+                Toggle(isOn: Binding(get: { enabled }, set: { store.setHoldTemperature($0) })) {
                     Text(compact ? "Hold temperature" : "Hold a target temperature")
                         .font(compact ? .callout.weight(.medium) : .subheadline.weight(.medium))
                 }
@@ -188,7 +188,12 @@ struct TargetControl: View {
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            } else if !compact {
+            } else if compact {
+                // Same height as the live status line, so toggling doesn't resize the popover.
+                Text("Off · fans follow \(store.isAllAuto ? "macOS" : "your setting")")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
                 Text("Fans speed up when the sensor rises above the target and slow back down below it. Thermal safety stays active.")
                     .font(.caption)
                     .foregroundStyle(.secondary)

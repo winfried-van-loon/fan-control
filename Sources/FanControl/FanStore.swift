@@ -222,6 +222,12 @@ final class FanStore {
         sensors.first { $0.key == targetSensorKey } ?? menuBarSensor
     }
 
+    /// The user-facing switch: turning hold off hands the fans back to macOS
+    /// instead of leaving them at the controller's last speed.
+    func setHoldTemperature(_ enabled: Bool) {
+        if enabled { setTargetMode(true) } else if targetModeEnabled { applyPreset(.auto) }
+    }
+
     func setTargetMode(_ enabled: Bool) {
         guard enabled != targetModeEnabled else { return }
         resetController()

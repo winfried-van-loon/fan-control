@@ -73,7 +73,22 @@
 
 ## Install
 
-Requires an Intel Mac with macOS 14 or later, and the Xcode Command Line Tools (`xcode-select --install`). Full Xcode isn't needed.
+Requires an **Intel Mac** with macOS 14 or later.
+
+### Download
+
+Get **Fan-Control-x.y.z.zip** from the [latest release](https://github.com/winfried-van-loon/fan-control/releases/latest), unzip it, and move **Fan Control.app** to `/Applications`.
+
+> [!NOTE]
+> The app isn't notarized by Apple (that requires a paid Apple Developer account), so macOS blocks it the first time you open it. To allow it, either:
+> - open it once, then go to **System Settings → Privacy & Security** and click **Open Anyway**, or
+> - run `xattr -dr com.apple.quarantine "/Applications/Fan Control.app"`.
+>
+> The release build only runs on Intel Macs.
+
+### Build from source
+
+Requires the Xcode Command Line Tools (`xcode-select --install`). Full Xcode isn't needed.
 
 ```bash
 git clone git@github.com:winfried-van-loon/fan-control.git
@@ -83,7 +98,9 @@ cd fan-control
 
 This builds `build/Fan Control.app` and copies it to `/Applications`. If the app is already running, it quits it cleanly (fans go back to Auto) and reopens it. Run `./build.sh` without `--install` to only build.
 
-Then click the fan icon in the menu bar and choose **Install** to set up the helper.
+### First run
+
+Click the fan icon in the menu bar and choose **Install** to set up the helper.
 
 ## The helper (why the admin prompt)
 
