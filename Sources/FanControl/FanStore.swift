@@ -75,7 +75,9 @@ final class FanStore {
     /// Called after each refresh and on display-relevant setting changes (used to update the status item).
     var onChange: (() -> Void)?
 
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
+    /// Read-only stores (used for README screenshots) never write to the fans.
+    private let readOnly: Bool
     private let reader = SensorReader()
     private let readQueue = DispatchQueue(label: "fancontrol.read")
     private var timer: Timer?
@@ -89,7 +91,9 @@ final class FanStore {
     private var smoothedTemperature: Double?
     private var lastControllerTick: Date?
 
-    init() {
+    init(defaults: UserDefaults = .standard, readOnly: Bool = false) {
+        self.defaults = defaults
+        self.readOnly = readOnly
         defaults.register(defaults: [
             "menuBarSensorKey": "TCXC",
             "refreshInterval": 2.0,
@@ -189,7 +193,7 @@ final class FanStore {
 
     /// Re-apply manual settings if the system took control back.
     private func correctDrift() {
-        guard helperStatus == .ready, !applying, pendingApply == nil, Date().timeIntervalSince(lastApply) > 5 else { return }
+        guard !readOnly, helperStatus == .ready, !applying, pendingApply == nil, Date().timeIntervalSince(lastApply) > 5 else { return }
         let drifted = fans.contains { fan in
             switch mode(for: fan.index) {
             case .manual(let rpm): return !fan.forced || abs(fan.target - rpm) > 30
@@ -438,6 +442,7 @@ final class FanStore {
     }
 
     private func scheduleApply(delay: Double = 0.35) {
+        guard !readOnly else { return }
         pendingApply?.cancel()
         pendingApply = Task { [weak self] in
             if delay > 0 { try? await Task.sleep(for: .seconds(delay)) }
@@ -472,7 +477,7 @@ final class FanStore {
 
     /// Synchronously hand the fans back to the system (used at quit).
     func restoreAutoIfNeeded() {
-        guard restoreAutoOnQuit, helperStatus == .ready else { return }
+        guard !readOnly, restoreAutoOnQuit, helperStatus == .ready else { return }
         pendingApply?.cancel()
         _ = try? HelperClient.runSync(["auto", "all"])
     }

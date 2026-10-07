@@ -14,6 +14,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if let i = args.firstIndex(of: "--login-item") {
             LoginItem.runCommand(i + 1 < args.count ? args[i + 1] : "status")
         }
+        if let i = args.firstIndex(of: "--screenshots"), i + 1 < args.count {
+            Screenshots.run(to: args[i + 1])
+            return
+        }
         if let i = args.firstIndex(of: "--snapshot"), i + 1 < args.count {
             Snapshot.run(store: store, to: args[i + 1])
             return

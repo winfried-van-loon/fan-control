@@ -246,12 +246,13 @@ private struct HistorySection: View {
             SectionHeader(title: "Last 10 Minutes", symbol: "chart.xyaxis.line", trailing: store.menuBarSensorLabel)
             Card {
                 VStack(alignment: .leading, spacing: 12) {
-                    Chart(store.history) { sample in
-                        LineMark(x: .value("Time", sample.date), y: .value("Temperature", displayTemp(sample.temperature)))
+                    let points = smoothedTemperatures
+                    Chart(points, id: \.date) { point in
+                        LineMark(x: .value("Time", point.date), y: .value("Temperature", point.value))
                             .interpolationMethod(.monotone)
-                            .foregroundStyle(Color.temperature(sample.temperature))
+                            .foregroundStyle(Color.temperature(point.celsius))
                     }
-                    .chartYScale(domain: .automatic(includesZero: false))
+                    .chartYScale(domain: temperatureDomain(points.map(\.value)))
                     .chartXAxis(.hidden)
                     .chartYAxisLabel(store.useFahrenheit ? "°F" : "°C")
                     .frame(height: 90)
@@ -275,6 +276,25 @@ private struct HistorySection: View {
     }
 
     private func displayTemp(_ c: Double) -> Double { store.useFahrenheit ? c * 9 / 5 + 32 : c }
+
+    /// Temperatures with a short moving average, so sensor jitter doesn't swamp the trend.
+    private var smoothedTemperatures: [(date: Date, celsius: Double, value: Double)] {
+        let temps = store.history.map(\.temperature)
+        let window = 5
+        return store.history.indices.map { i in
+            let slice = temps[max(0, i - window + 1)...i]
+            let avg = slice.reduce(0, +) / Double(slice.count)
+            return (store.history[i].date, avg, displayTemp(avg))
+        }
+    }
+
+    /// At least 20 degrees tall, so small fluctuations look small.
+    private func temperatureDomain(_ values: [Double]) -> ClosedRange<Double> {
+        guard let lo = values.min(), let hi = values.max() else { return 30...70 }
+        let span = max(20, hi - lo + 6)
+        let mid = (lo + hi) / 2
+        return (mid - span / 2).rounded(.down)...(mid + span / 2).rounded(.up)
+    }
 }
 
 private struct TemperaturesSection: View {
